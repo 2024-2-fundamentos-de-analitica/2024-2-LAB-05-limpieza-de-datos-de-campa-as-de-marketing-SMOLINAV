@@ -2,8 +2,10 @@
 Escriba el codigo que ejecute la accion solicitada.
 """
 
-# pylint: disable=import-outside-toplevel
-
+import pandas as pd
+import zipfile
+import os
+from datetime import datetime
 
 def clean_campaign_data():
     """
@@ -49,8 +51,89 @@ def clean_campaign_data():
 
 
     """
+# Directorios
+    directorio = "files/input/"
+    salida_dir = "files/output/"
+    os.makedirs(salida_dir, exist_ok=True)
 
-    return
+# Archivos de la salida
+    client_file = os.path.join(salida_dir, "client.csv")
+    campaign_file = os.path.join(salida_dir, "campaign.csv")
+    economics_file = os.path.join(salida_dir, "economics.csv")
+
+# Listas para almacenar los datos
+    client_data = []
+    campaign_data = []
+    economics_data = []
+
+# Funciones para transformar columnas
+    def trans_client(row):
+        return {
+            "client_id": row["client_id"],
+            "age": row["age"],
+            "job": row["job"].replace(".", "").replace("-", "_"),
+            "marital": row["marital"],
+            "education": row["education"].replace(".", "_") if row["education"] != "unknown" else pd.NA,
+            "credit_default": 1 if row["credit_default"] == "yes" else 0,
+            "mortgage": 1 if row["mortgage"] == "yes" else 0,
+        }
+
+# Funciones para transformar columnas
+    def trans_camp(row):
+        last_contact_day = datetime.strptime(f"2022-{row['month']}-{row['day']}", "%Y-%b-%d").strftime("%Y-%m-%d")
+        return {
+            "client_id": row["client_id"],
+            "number_contacts": row["number_contacts"],
+            "contact_duration": row["contact_duration"],
+            "previous_campaign_contacts": row["previous_campaign_contacts"],
+            "previous_outcome": 1 if row["previous_outcome"] == "success" else 0,
+            "campaign_outcome": 1 if row["campaign_outcome"] == "yes" else 0,
+            "last_contact_date": last_contact_day,
+        }
+
+# Funciones para transformar columnas
+    def transform_economics_data(row):
+        return {
+            "client_id": row["client_id"],
+            "cons_price_idx": row["cons_price_idx"],
+            "euribor_three_months": row["euribor_three_months"],
+        }
+
+# Recorrer los archivos
+    for file_name in os.listdir(directorio):
+        if file_name.endswith(".zip"):
+            with zipfile.ZipFile(os.path.join(directorio, file_name), 'r') as zip_ref:
+                for csv_file in zip_ref.namelist():
+                    with zip_ref.open(csv_file) as f:
+                        df = pd.read_csv(f)
+
+                        # Imprimir las columnas disponibles para depuración
+                        print(f"Procesando archivo: {csv_file}")
+                        print(f"Columnas disponibles: {df.columns.tolist()}")
+
+                        # Validar las columnas disponibles antes de procesar
+                        if all(col in df.columns for col in ["client_id", "age", "job", "marital", "education", "credit_default", "mortgage"]):
+                            client_subset = df[["client_id", "age", "job", "marital", "education", "credit_default", "mortgage"]]
+                            client_data.extend(client_subset.apply(trans_client, axis=1))
+
+                        if all(col in df.columns for col in ["client_id", "number_contacts", "contact_duration", "previous_campaign_contacts", "previous_outcome", "campaign_outcome", "day", "month"]):
+                            campaign_subset = df[["client_id", "number_contacts", "contact_duration", "previous_campaign_contacts", "previous_outcome", "campaign_outcome", "day", "month"]]
+                            campaign_data.extend(campaign_subset.apply(trans_camp, axis=1))
+
+                        if all(col in df.columns for col in ["client_id", "cons_price_idx", "euribor_three_months"]):
+                            economics_subset = df[["client_id", "cons_price_idx", "euribor_three_months"]]
+                            economics_data.extend(economics_subset.apply(transform_economics_data, axis=1))
+
+# Guardar los archivos
+    if client_data:
+        pd.DataFrame(client_data).to_csv(client_file, index=False)
+    if campaign_data:
+        pd.DataFrame(campaign_data).to_csv(campaign_file, index=False)
+    if economics_data:
+        pd.DataFrame(economics_data).to_csv(economics_file, index=False)
+
+
+    return None
 
 
 if __name__ == "__main__":
